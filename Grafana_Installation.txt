@@ -1,0 +1,150 @@
+หากต้องการติดตั้ง Grafana บน Ubuntu และให้รันเป็น Service โดยใช้ User และ Group ชื่อ `grafana` พร้อม Auto Start เมื่อบูตเครื่อง สามารถใช้ Script ดังนี้
+
+```bash
+#!/bin/bash
+
+set -e
+
+echo "======================================"
+echo " Install Grafana Server"
+echo "======================================"
+
+# ตรวจสอบสิทธิ์ root
+if [ "$EUID" -ne 0 ]; then
+    echo "กรุณารันด้วย sudo หรือ root"
+    exit 1
+fi
+
+# อัปเดตระบบ
+apt update
+
+# ติดตั้ง package ที่จำเป็น
+apt install -y wget curl adduser libfontconfig1 musl
+
+# สร้าง User และ Group
+if ! getent group grafana >/dev/null; then
+    groupadd --system grafana
+fi
+
+if ! id grafana >/dev/null 2>&1; then
+    useradd \
+        --system \
+        --gid grafana \
+        --home-dir /var/lib/grafana \
+        --shell /usr/sbin/nologin \
+        grafana
+fi
+
+# ดาวน์โหลด Grafana ล่าสุด
+GRAFANA_VERSION="12.1.1"
+
+wget -O /tmp/grafana.deb \
+https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb
+
+# ติดตั้ง
+dpkg -i /tmp/grafana.deb || apt-get install -f -y
+
+# สร้าง Directory
+mkdir -p /var/lib/grafana
+mkdir -p /var/log/grafana
+mkdir -p /etc/grafana
+
+# กำหนดสิทธิ์
+chown -R grafana:grafana /var/lib/grafana
+chown -R grafana:grafana /var/log/grafana
+chown -R grafana:grafana /etc/grafana
+
+# สร้าง Systemd Service ใหม่
+cat > /etc/systemd/system/grafana.service << 'EOF'
+[Unit]
+Description=Grafana Server
+Documentation=https://grafana.com
+After=network.target
+
+[Service]
+Type=simple
+
+User=grafana
+Group=grafana
+
+ExecStart=/usr/sbin/grafana-server \
+  --homepath=/usr/share/grafana \
+  --config=/etc/grafana/grafana.ini
+
+Restart=always
+RestartSec=5
+
+LimitNOFILE=65536
+
+WorkingDirectory=/usr/share/grafana
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload Service
+systemctl daemon-reload
+
+# Enable Auto Start
+systemctl enable grafana
+
+# Start Service
+systemctl restart grafana
+
+echo ""
+echo "======================================"
+echo " Grafana Installation Complete"
+echo "======================================"
+echo "Service Status:"
+systemctl --no-pager status grafana
+
+echo ""
+echo "Web UI:"
+echo "http://$(hostname -I | awk '{print $1}'):3000"
+echo ""
+echo "Default Login"
+echo "Username : admin"
+echo "Password : admin"
+```
+
+### การใช้งาน
+
+บันทึกเป็นไฟล์
+
+```bash
+nano install_grafana.sh
+```
+
+วาง Script แล้วบันทึก
+
+กำหนดสิทธิ์
+
+```bash
+chmod +x install_grafana.sh
+```
+
+รัน
+
+```bash
+sudo ./install_grafana.sh
+```
+
+ตรวจสอบสถานะ
+
+```bash
+systemctl status grafana
+```
+
+ดู Log
+
+```bash
+journalctl -u grafana -f
+```
+
+ตรวจสอบ Auto Start
+
+```bash
+systemctl is-enabled grafana
+```
+
+ผลลัพธ์คือ Grafana จะทำงานภายใต้ User `grafana`, Group `grafana` และเริ่มทำงานอัตโนมัติทุกครั้งที่ Ubuntu บูตเครื่อง.
