@@ -1,0 +1,172 @@
+ตัวอย่าง Script สำหรับติดตั้ง **InfluxDB 2.x บน Ubuntu Server** โดย
+
+* ดาวน์โหลด InfluxDB 2.x รุ่นล่าสุดสำหรับ Linux AMD64
+* ติดตั้ง Binary ไว้ที่ `/usr/local/bin/influxd`
+* สร้าง User `influxdb`
+* สร้าง Group `influxdb`
+* สร้าง Data Directory
+* สร้าง Systemd Service
+* Enable Auto Start
+
+```bash
+#!/bin/bash
+
+set -e
+
+INFLUX_VERSION="2.7.12"
+
+echo "========================================="
+echo " Installing InfluxDB ${INFLUX_VERSION}"
+echo "========================================="
+
+apt update
+apt install -y wget tar curl
+
+echo "========================================="
+echo " Create influxdb Group"
+echo "========================================="
+
+if ! getent group influxdb >/dev/null; then
+    groupadd --system influxdb
+fi
+
+echo "========================================="
+echo " Create influxdb User"
+echo "========================================="
+
+if ! id influxdb >/dev/null 2>&1; then
+    useradd \
+        --system \
+        --gid influxdb \
+        --home-dir /var/lib/influxdb \
+        --shell /usr/sbin/nologin \
+        influxdb
+fi
+
+echo "========================================="
+echo " Create Directories"
+echo "========================================="
+
+mkdir -p /var/lib/influxdb
+mkdir -p /etc/influxdb
+mkdir -p /var/log/influxdb
+
+chown -R influxdb:influxdb /var/lib/influxdb
+chown -R influxdb:influxdb /etc/influxdb
+chown -R influxdb:influxdb /var/log/influxdb
+
+echo "========================================="
+echo " Download InfluxDB"
+echo "========================================="
+
+cd /tmp
+
+wget -O influxdb2.tar.gz \
+https://download.influxdata.com/influxdb/releases/influxdb2-${INFLUX_VERSION}-linux-amd64.tar.gz
+
+tar -xzf influxdb2.tar.gz
+
+cd influxdb2-${INFLUX_VERSION}
+
+install -m 755 influxd /usr/local/bin/influxd
+install -m 755 influx /usr/local/bin/influx
+
+echo "========================================="
+echo " Create Systemd Service"
+echo "========================================="
+
+cat > /etc/systemd/system/influxdb.service <<EOF
+[Unit]
+Description=InfluxDB 2.x
+Documentation=https://docs.influxdata.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User=influxdb
+Group=influxdb
+
+ExecStart=/usr/local/bin/influxd
+
+WorkingDirectory=/var/lib/influxdb
+
+Restart=always
+RestartSec=5
+
+LimitNOFILE=65536
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "========================================="
+echo " Set Ownership"
+echo "========================================="
+
+chown influxdb:influxdb /usr/local/bin/influxd
+chown influxdb:influxdb /usr/local/bin/influx
+
+echo "========================================="
+echo " Enable Service"
+echo "========================================="
+
+systemctl daemon-reload
+systemctl enable influxdb.service
+
+echo ""
+echo "========================================="
+echo " Installation Complete"
+echo "========================================="
+echo ""
+echo "Start Service:"
+echo "  systemctl start influxdb"
+echo ""
+echo "Check Status:"
+echo "  systemctl status influxdb"
+echo ""
+echo "View Logs:"
+echo "  journalctl -u influxdb -f"
+echo ""
+echo "Open Web UI:"
+echo "  http://SERVER-IP:8086"
+echo ""
+```
+
+### วิธีใช้งาน
+
+```bash
+nano install_influxdb2.sh
+```
+
+วาง Script แล้วบันทึก
+
+```bash
+chmod +x install_influxdb2.sh
+sudo ./install_influxdb2.sh
+```
+
+เริ่ม Service
+
+```bash
+sudo systemctl start influxdb
+sudo systemctl status influxdb
+```
+
+ตรวจสอบ Port
+
+```bash
+ss -tulpn | grep 8086
+```
+
+เข้าใช้งานครั้งแรกผ่าน Browser:
+
+```text
+http://<IP-Server>:8086
+```
+
+เพื่อสร้าง Organization, Bucket และ Admin User ของ InfluxDB 2.x.
