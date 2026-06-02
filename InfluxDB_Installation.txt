@@ -1,0 +1,126 @@
+ตัวอย่าง Script สำหรับ Ubuntu เพื่อ
+
+* สร้าง User `influxdb`
+* สร้าง Group `influxdb`
+* กำหนดสิทธิ์ไฟล์และโฟลเดอร์
+* สร้าง Systemd Service สำหรับ `influxd`
+* กำหนดตำแหน่ง Binary เป็น `/usr/local/bin/influxd`
+* เปิดใช้งาน Service อัตโนมัติเมื่อบูต
+
+```bash
+#!/bin/bash
+
+set -e
+
+echo "======================================"
+echo " Create influxdb User and Group"
+echo "======================================"
+
+# Create Group
+if ! getent group influxdb >/dev/null; then
+    groupadd --system influxdb
+    echo "Group influxdb created"
+else
+    echo "Group influxdb already exists"
+fi
+
+# Create User
+if ! id influxdb >/dev/null 2>&1; then
+    useradd \
+        --system \
+        --gid influxdb \
+        --home-dir /var/lib/influxdb \
+        --shell /usr/sbin/nologin \
+        influxdb
+    echo "User influxdb created"
+else
+    echo "User influxdb already exists"
+fi
+
+echo "======================================"
+echo " Create Directories"
+echo "======================================"
+
+mkdir -p /var/lib/influxdb
+mkdir -p /etc/influxdb
+mkdir -p /var/log/influxdb
+
+chown -R influxdb:influxdb /var/lib/influxdb
+chown -R influxdb:influxdb /var/log/influxdb
+chown -R influxdb:influxdb /etc/influxdb
+
+chmod 755 /var/lib/influxdb
+chmod 755 /var/log/influxdb
+chmod 755 /etc/influxdb
+
+echo "======================================"
+echo " Create systemd service"
+echo "======================================"
+
+cat >/etc/systemd/system/influxdb.service <<'EOF'
+[Unit]
+Description=InfluxDB Service
+Documentation=https://docs.influxdata.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User=influxdb
+Group=influxdb
+
+ExecStart=/usr/local/bin/influxd
+
+Restart=on-failure
+RestartSec=5
+
+LimitNOFILE=65536
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "======================================"
+echo " Reload systemd"
+echo "======================================"
+
+systemctl daemon-reload
+systemctl enable influxdb.service
+
+echo ""
+echo "Service installed successfully"
+echo ""
+echo "Start service with:"
+echo "  systemctl start influxdb"
+echo ""
+echo "Check status:"
+echo "  systemctl status influxdb"
+echo ""
+echo "View logs:"
+echo "  journalctl -u influxdb -f"
+```
+
+บันทึกเป็นไฟล์ เช่น
+
+```bash
+nano install_influxdb_service.sh
+```
+
+วาง Script แล้วรัน
+
+```bash
+chmod +x install_influxdb_service.sh
+sudo ./install_influxdb_service.sh
+```
+
+จากนั้นเริ่ม Service
+
+```bash
+sudo systemctl start influxdb
+sudo systemctl status influxdb
+```
+
+หากคุณมีไฟล์คอนฟิก InfluxDB อยู่ที่ `/etc/influxdb/config.toml` หรือ `/etc/influxdb/config.yml` ผมสามารถปรับ `ExecStart` ให้โหลดไฟล์คอนฟิกอัตโนมัติได้ด้วยครับ।
